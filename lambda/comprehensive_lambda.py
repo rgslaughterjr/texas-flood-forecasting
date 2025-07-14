@@ -30,71 +30,47 @@ def lambda_handler(event, context):
         }
 
 def get_texas_mesonet_data(lat, lon):
-    """Get Texas Mesonet weather data using correct API endpoints"""
+    """Get Texas Mesonet weather data using CurrentData directly"""
     try:
-        # Get all stations
-        stations_url = "https://www.texmesonet.org/api/Stations"
-        stations_response = fetch_api_data(stations_url, 'TexMesonet Stations')
-        
-        if not stations_response:
-            return {'status': 'Unavailable', 'error': 'Could not fetch stations'}
-        
-        # Find closest stations (within 50 miles)
-        nearby_stations = []
-        for station in stations_response:
-            if 'latitude' in station and 'longitude' in station:
-                station_lat = float(station['latitude'])
-                station_lon = float(station['longitude'])
-                distance = math.sqrt((lat - station_lat)**2 + (lon - station_lon)**2) * 69
-                
-                if distance <= 50:
-                    nearby_stations.append({
-                        'id': station.get('stationId', station.get('id')),
-                        'name': station.get('stationName', station.get('name')),
-                        'distance': round(distance, 1)
-                    })
-        
-        nearby_stations.sort(key=lambda x: x['distance'])
-        nearby_stations = nearby_stations[:5]
-        
-        if not nearby_stations:
-            return {'status': 'No nearby stations'}
-        
-        # Get current data
+        # Get current data (includes station info)
         current_data_url = "https://www.texmesonet.org/api/CurrentData"
         current_data_response = fetch_api_data(current_data_url, 'TexMesonet Current Data')
         
         if not current_data_response:
             return {'status': 'Unavailable', 'error': 'Could not fetch current data'}
         
-        # Extract data array from response
         current_data = current_data_response.get('data', [])
         
-        # Match current data with nearby stations
+        # Find nearby stations with data (within 50 miles)
         station_data = []
-        for station in nearby_stations:
-            for data_point in current_data:
-                if (data_point.get('stationId') == station['id'] or 
-                    data_point.get('id') == station['id']):
+        for data_point in current_data:
+            if 'latitude' in data_point and 'longitude' in data_point:
+                station_lat = float(data_point['latitude'])
+                station_lon = float(data_point['longitude'])
+                distance = math.sqrt((lat - station_lat)**2 + (lon - station_lon)**2) * 69
+                
+                if distance <= 50:
                     station_data.append({
-                        'station_id': station['id'],
-                        'station_name': station['name'],
-                        'distance': station['distance'],
-                        'temperature': data_point.get('airTemp', data_point.get('temperature')),
+                        'station_id': data_point.get('stationId'),
+                        'station_name': data_point.get('name'),
+                        'distance': round(distance, 1),
+                        'temperature': data_point.get('airTemp'),
                         'humidity': data_point.get('humidity'),
-                        'precipitation': data_point.get('precip24Hr', data_point.get('precipitation')),
+                        'precipitation': data_point.get('precip24Hr'),
                         'soil_moisture': data_point.get('soilMoisture')
                     })
-                    break
+        
+        station_data.sort(key=lambda x: x['distance'])
+        station_data = station_data[:5]
         
         if not station_data:
-            return {'status': 'Data unavailable'}
+            return {'status': 'No nearby stations'}
         
         # Calculate regional averages
-        temps = [s['temperature'] for s in station_data if s['temperature'] is not None]
-        humidity = [s['humidity'] for s in station_data if s['humidity'] is not None]
-        precip = [s['precipitation'] for s in station_data if s['precipitation'] is not None]
-        soil_moisture = [s['soil_moisture'] for s in station_data if s['soil_moisture'] is not None]
+        temps = [float(s['temperature']) for s in station_data if s['temperature'] is not None]
+        humidity = [float(s['humidity']) for s in station_data if s['humidity'] is not None]
+        precip = [float(s['precipitation']) for s in station_data if s['precipitation'] is not None]
+        soil_moisture = [float(s['soil_moisture']) for s in station_data if s['soil_moisture'] is not None]
         
         return {
             'status': 'Active',
@@ -104,10 +80,6 @@ def get_texas_mesonet_data(lat, lon):
                 'humidity': round(sum(humidity) / len(humidity), 1) if humidity else None,
                 'precipitation_24h': round(sum(precip), 2) if precip else 0.0,
                 'soil_saturation': round(sum(soil_moisture) / len(soil_moisture), 1) if soil_moisture else None
-            },
-            'flood_indicators': {
-                'high_precip_stations': len([p for p in precip if p > 0.5]),
-                'saturated_soil_stations': len([s for s in soil_moisture if s > 80])
             },
             'stations': station_data
         }

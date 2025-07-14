@@ -49,8 +49,8 @@ def get_texas_mesonet_data(lat, lon):
                 
                 if distance <= 50:
                     nearby_stations.append({
-                        'id': station.get('siteId', station.get('id')),
-                        'name': station.get('siteName', station.get('name')),
+                        'id': station.get('stationId', station.get('id')),
+                        'name': station.get('stationName', station.get('name')),
                         'distance': round(distance, 1)
                     })
         
@@ -71,7 +71,7 @@ def get_texas_mesonet_data(lat, lon):
         station_data = []
         for station in nearby_stations:
             for data_point in current_data:
-                if (data_point.get('siteId') == station['id'] or 
+                if (data_point.get('stationId') == station['id'] or 
                     data_point.get('id') == station['id']):
                     station_data.append({
                         'station_id': station['id'],

@@ -1,3 +1,4 @@
+cat > comprehensive_lambda.py << 'EOF'
 import json
 import urllib.request
 import boto3
@@ -30,50 +31,49 @@ def lambda_handler(event, context):
         }
 
 def get_texas_mesonet_data(lat, lon):
-    """Get Texas Mesonet weather data using CurrentData directly"""
     try:
         current_data_url = "https://www.texmesonet.org/api/CurrentData"
         current_data_response = fetch_api_data(current_data_url, 'TexMesonet Current Data')
         
-        if not current_data_response:
-            return {'status': 'Unavailable', 'error': 'Could not fetch current data'}
+        if not current_data_response or 'data' not in current_data_response:
+            return {'status': 'Unavailable'}
         
-        current_data = current_data_response.get('data', [])
-        
-        # Find nearby stations with data (within 50 miles)
+        current_data = current_data_response['data']
         station_data = []
+        
         for data_point in current_data:
-            if 'latitude' in data_point and 'longitude' in data_point:
+            try:
+                if not (data_point.get('latitude') and data_point.get('longitude')):
+                    continue
+                    
                 station_lat = float(data_point['latitude'])
                 station_lon = float(data_point['longitude'])
                 distance = math.sqrt((lat - station_lat)**2 + (lon - station_lon)**2) * 69
                 
                 if distance <= 50:
-                    # Convert precipitation from mm to inches
-                    precip_mm = float(data_point.get('precip24Hr', 0)) if data_point.get('precip24Hr') else 0.0
-                    precip_inches = round(precip_mm / 25.4, 2)
-                    
+                    precip_mm = float(data_point.get('precip24Hr') or 0)
                     station_data.append({
                         'station_id': data_point.get('stationId'),
                         'station_name': data_point.get('name'),
                         'distance': round(distance, 1),
-                        'temperature': float(data_point.get('airTemp')) if data_point.get('airTemp') else None,
-                        'humidity': float(data_point.get('humidity')) if data_point.get('humidity') else None,
-                        'precipitation': precip_inches,
-                        'soil_moisture': float(data_point.get('soilMoisture')) if data_point.get('soilMoisture') else None
+                        'temperature': float(data_point.get('airTemp') or 0),
+                        'humidity': float(data_point.get('humidity') or 0),
+                        'precipitation': round(precip_mm / 25.4, 2),
+                        'soil_moisture': float(data_point.get('soilMoisture') or 0)
                     })
-        
-        station_data.sort(key=lambda x: x['distance'])
-        station_data = station_data[:5]
+            except (ValueError, TypeError):
+                continue
         
         if not station_data:
             return {'status': 'No nearby stations'}
         
-        # Calculate regional averages
-        temps = [s['temperature'] for s in station_data if s['temperature'] is not None]
-        humidity = [s['humidity'] for s in station_data if s['humidity'] is not None]
-        precip = [s['precipitation'] for s in station_data if s['precipitation'] is not None]
-        soil_moisture = [s['soil_moisture'] for s in station_data if s['soil_moisture'] is not None]
+        station_data.sort(key=lambda x: x['distance'])
+        station_data = station_data[:5]
+        
+        temps = [s['temperature'] for s in station_data if s['temperature'] > 0]
+        humidity = [s['humidity'] for s in station_data if s['humidity'] > 0]
+        precip = [s['precipitation'] for s in station_data]
+        soil = [s['soil_moisture'] for s in station_data if s['soil_moisture'] > 0]
         
         return {
             'status': 'Active',
@@ -81,8 +81,8 @@ def get_texas_mesonet_data(lat, lon):
             'regional_averages': {
                 'temperature': round(sum(temps) / len(temps), 1) if temps else None,
                 'humidity': round(sum(humidity) / len(humidity), 1) if humidity else None,
-                'precipitation_24h': round(sum(precip), 2) if precip else 0.0,
-                'soil_saturation': round(sum(soil_moisture) / len(soil_moisture) * 100, 1) if soil_moisture else None
+                'precipitation_24h': round(sum(precip), 2),
+                'soil_saturation': round(sum(soil) / len(soil) * 100, 1) if soil else None
             },
             'stations': station_data
         }
@@ -93,17 +93,14 @@ def get_texas_mesonet_data(lat, lon):
 def fetch_comprehensive_data(lat, lon):
     data = {'source_count': 0}
     
-    # USGS Stream Gauges
     usgs_url = f"https://waterservices.usgs.gov/nwis/iv/?format=json&parameterCd=00065,00060&bBox={lon-0.5},{lat-0.5},{lon+0.5},{lat+0.5}&siteStatus=active"
     data['usgs'] = fetch_api_data(usgs_url, 'USGS')
     if data['usgs']: data['source_count'] += 1
     
-    # Texas Mesonet
     data['texas_mesonet'] = get_texas_mesonet_data(lat, lon)
     if data['texas_mesonet'].get('status') == 'Active': 
         data['source_count'] += 1
     
-    # NWS Weather
     nws_point = f"https://api.weather.gov/points/{lat},{lon}"
     point_data = fetch_api_data(nws_point, 'NWS Point')
     if point_data:
@@ -113,15 +110,12 @@ def fetch_comprehensive_data(lat, lon):
         if data['nws_forecast'] or data['nws_hourly'] or data['nws_alerts']:
             data['source_count'] += 1
     
-    # LCRA Flow Data
     data['lcra_flow'] = fetch_api_data('https://hydromet.lcra.org/api/GetStageFlowForAllSites', 'LCRA Flow')
     if data['lcra_flow']: data['source_count'] += 1
     
-    # LCRA Lake Levels
     data['lcra_lakes'] = fetch_api_data('https://hydromet.lcra.org/api/GetHighlandLakesSummary', 'LCRA Lakes')
     if data['lcra_lakes']: data['source_count'] += 1
     
-    # NEXRAD Radar Status
     data['nexrad'] = get_nexrad_status(lat, lon)
     if data['nexrad'].get('status') == 'Active': data['source_count'] += 1
     
@@ -156,7 +150,6 @@ def get_nexrad_status(lat, lon):
 
 def generate_ai_forecast(flood_data, location, lat, lon, forecast_hours):
     try:
-        # Enhanced prompt with TexMesonet data
         mesonet_data = flood_data.get('texas_mesonet', {})
         mesonet_summary = ""
         if mesonet_data.get('status') == 'Active':
@@ -176,21 +169,15 @@ LCRA stations: {len(flood_data.get('lcra_flow', []))}
 Weather alerts: {len(flood_data.get('nws_alerts', {}).get('features', []))}
 {mesonet_summary}
 
-Analyze specifically for the next {forecast_hours} hours. Consider:
-- Stream gauge trends and capacity
-- Weather forecast precipitation timing
-- Soil saturation levels from TexMesonet
-- Geographic flood risk factors
-
 Respond with JSON only:
 {{
     "risk_level": "LOW|MODERATE|HIGH|CRITICAL",
     "risk_score": 0-100,
     "confidence": 0-100,
     "key_factors": ["factor1", "factor2"],
-    "reasoning": "analysis specific to {forecast_hours}-hour period including soil conditions",
+    "reasoning": "analysis specific to {forecast_hours}-hour period",
     "recommendations": ["action1", "action2"],
-    "temporal_forecast": "{forecast_hours}-hour progression details"
+    "temporal_forecast": "{forecast_hours}-hour progression"
 }}"""
 
         response = bedrock.invoke_model(
@@ -225,3 +212,7 @@ Respond with JSON only:
             'coordinates': [lat, lon],
             'forecast_period': f'{forecast_hours}_hours'
         }
+EOF
+
+zip comprehensive_lambda.zip comprehensive_lambda.py
+aws lambda update-function-code --function-name texas-flood-ai --zip-file fileb://comprehensive_lambda.zip

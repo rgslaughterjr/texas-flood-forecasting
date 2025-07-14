@@ -213,6 +213,3 @@ Respond with JSON only:
             'forecast_period': f'{forecast_hours}_hours'
         }
 EOF
-
-zip comprehensive_lambda.zip comprehensive_lambda.py
-aws lambda update-function-code --function-name texas-flood-ai --zip-file fileb://comprehensive_lambda.zip

@@ -29,6 +29,91 @@ def lambda_handler(event, context):
             'body': json.dumps({'risk_level': 'ERROR', 'error': str(e)})
         }
 
+def get_texas_mesonet_data(lat, lon):
+    """Get Texas Mesonet weather data using correct API endpoints"""
+    try:
+        import math
+        
+        # Get all stations
+        stations_url = "https://www.texmesonet.org/api/Stations"
+        stations_response = fetch_api_data(stations_url, 'TexMesonet Stations')
+        
+        if not stations_response:
+            return {'status': 'Unavailable', 'error': 'Could not fetch stations'}
+        
+        # Find closest stations (within 50 miles)
+        nearby_stations = []
+        for station in stations_response:
+            if 'latitude' in station and 'longitude' in station:
+                station_lat = float(station['latitude'])
+                station_lon = float(station['longitude'])
+                distance = math.sqrt((lat - station_lat)**2 + (lon - station_lon)**2) * 69
+                
+                if distance <= 50:
+                    nearby_stations.append({
+                        'id': station.get('siteId', station.get('id')),
+                        'name': station.get('siteName', station.get('name')),
+                        'distance': round(distance, 1)
+                    })
+        
+        nearby_stations.sort(key=lambda x: x['distance'])
+        nearby_stations = nearby_stations[:5]
+        
+        if not nearby_stations:
+            return {'status': 'No nearby stations'}
+        
+        # Get current data
+        current_data_url = "https://www.texmesonet.org/api/CurrentData"
+        current_data = fetch_api_data(current_data_url, 'TexMesonet Current Data')
+        
+        if not current_data:
+            return {'status': 'Unavailable', 'error': 'Could not fetch current data'}
+        
+        # Match current data with nearby stations
+        station_data = []
+        for station in nearby_stations:
+            for data_point in current_data:
+                if (data_point.get('siteId') == station['id'] or 
+                    data_point.get('id') == station['id']):
+                    station_data.append({
+                        'station_id': station['id'],
+                        'station_name': station['name'],
+                        'distance': station['distance'],
+                        'temperature': data_point.get('temperature', data_point.get('airTemp')),
+                        'humidity': data_point.get('humidity', data_point.get('relHumidity')),
+                        'precipitation': data_point.get('precipitation', data_point.get('rainfall')),
+                        'soil_moisture': data_point.get('soilMoisture')
+                    })
+                    break
+        
+        if not station_data:
+            return {'status': 'Data unavailable'}
+        
+        # Calculate regional averages
+        temps = [s['temperature'] for s in station_data if s['temperature'] is not None]
+        humidity = [s['humidity'] for s in station_data if s['humidity'] is not None]
+        precip = [s['precipitation'] for s in station_data if s['precipitation'] is not None]
+        soil_moisture = [s['soil_moisture'] for s in station_data if s['soil_moisture'] is not None]
+        
+        return {
+            'status': 'Active',
+            'stations_count': len(station_data),
+            'regional_averages': {
+                'temperature': round(sum(temps) / len(temps), 1) if temps else None,
+                'humidity': round(sum(humidity) / len(humidity), 1) if humidity else None,
+                'precipitation_24h': round(sum(precip), 2) if precip else 0.0,
+                'soil_saturation': round(sum(soil_moisture) / len(soil_moisture), 1) if soil_moisture else None
+            },
+            'flood_indicators': {
+                'high_precip_stations': len([p for p in precip if p > 0.5]),
+                'saturated_soil_stations': len([s for s in soil_moisture if s > 80])
+            },
+            'stations': station_data
+        }
+        
+    except Exception as e:
+        return {'status': 'Error', 'error': str(e)}
+
 def fetch_comprehensive_data(lat, lon):
     data = {'source_count': 0}
     
@@ -36,6 +121,11 @@ def fetch_comprehensive_data(lat, lon):
     usgs_url = f"https://waterservices.usgs.gov/nwis/iv/?format=json&parameterCd=00065,00060&bBox={lon-0.5},{lat-0.5},{lon+0.5},{lat+0.5}&siteStatus=active"
     data['usgs'] = fetch_api_data(usgs_url, 'USGS')
     if data['usgs']: data['source_count'] += 1
+    
+    # Texas Mesonet
+    data['texas_mesonet'] = get_texas_mesonet_data(lat, lon)
+    if data['texas_mesonet'].get('status') == 'Active': 
+        data['source_count'] += 1
     
     # NWS Weather
     nws_point = f"https://api.weather.gov/points/{lat},{lon}"

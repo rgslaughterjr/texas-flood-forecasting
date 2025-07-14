@@ -32,8 +32,6 @@ def lambda_handler(event, context):
 def get_texas_mesonet_data(lat, lon):
     """Get Texas Mesonet weather data using correct API endpoints"""
     try:
-        import math
-        
         # Get all stations
         stations_url = "https://www.texmesonet.org/api/Stations"
         stations_response = fetch_api_data(stations_url, 'TexMesonet Stations')
@@ -180,17 +178,33 @@ def get_nexrad_status(lat, lon):
 
 def generate_ai_forecast(flood_data, location, lat, lon, forecast_hours):
     try:
+        # Enhanced prompt with TexMesonet data
+        mesonet_data = flood_data.get('texas_mesonet', {})
+        mesonet_summary = ""
+        if mesonet_data.get('status') == 'Active':
+            avg = mesonet_data.get('regional_averages', {})
+            indicators = mesonet_data.get('flood_indicators', {})
+            mesonet_summary = f"""
+TexMesonet Data ({mesonet_data.get('stations_count', 0)} stations):
+- Regional temperature: {avg.get('temperature')}°F
+- Regional humidity: {avg.get('humidity')}%
+- 24h precipitation: {avg.get('precipitation_24h')} inches
+- Soil saturation: {avg.get('soil_saturation')}%
+- High precip stations: {indicators.get('high_precip_stations', 0)}
+- Saturated soil stations: {indicators.get('saturated_soil_stations', 0)}"""
+
         prompt = f"""Generate {forecast_hours}-hour flood forecast for {location} at {lat}, {lon}.
 
 Data sources: {flood_data.get('source_count', 0)} active
 USGS gauges: {len(flood_data.get('usgs', {}).get('value', {}).get('timeSeries', []))}
 LCRA stations: {len(flood_data.get('lcra_flow', []))}
 Weather alerts: {len(flood_data.get('nws_alerts', {}).get('features', []))}
+{mesonet_summary}
 
 Analyze specifically for the next {forecast_hours} hours. Consider:
 - Stream gauge trends and capacity
 - Weather forecast precipitation timing
-- Seasonal patterns and soil saturation
+- Soil saturation levels from TexMesonet
 - Geographic flood risk factors
 
 Respond with JSON only:
@@ -199,7 +213,7 @@ Respond with JSON only:
     "risk_score": 0-100,
     "confidence": 0-100,
     "key_factors": ["factor1", "factor2"],
-    "reasoning": "analysis specific to {forecast_hours}-hour period",
+    "reasoning": "analysis specific to {forecast_hours}-hour period including soil conditions",
     "recommendations": ["action1", "action2"],
     "temporal_forecast": "{forecast_hours}-hour progression details"
 }}"""
@@ -222,7 +236,8 @@ Respond with JSON only:
             'generated_at': datetime.utcnow().isoformat(),
             'model': 'claude-3-haiku',
             'sources_analyzed': flood_data.get('source_count', 0),
-            'forecast_period': f'{forecast_hours}_hours'
+            'forecast_period': f'{forecast_hours}_hours',
+            'texas_mesonet_stations': mesonet_data.get('stations_count', 0)
         })
         
         return ai_response

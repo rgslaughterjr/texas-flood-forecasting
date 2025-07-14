@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Texas AI Flood Forecasting</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 { font-size: 2.5rem; margin-bottom: 10px; }
+        .header p { font-size: 1.1rem; opacity: 0.9; }
+        
+        .content { padding: 30px; }
+        
+        .input-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .input-group {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        label {
+            font-weight: 600;
+            color: #374151;
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        input, select {
+            padding: 12px 16px;
+            border: 2px solid #e5e7eb;
+            border-radius: 12px;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+            background: white;
+        }
+        
+        input:focus, select:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+        
+        .preset-locations {
+            margin-bottom: 25px;
+            text-align: center;
+        }
+        
+        .preset-locations h3 { 
+            color: #374151; 
+            margin-bottom: 15px;
+            font-size: 1.1rem;
+        }
+        
+        .location-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+        }
+        
+        .location-btn {
+            background: #f3f4f6;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            padding: 8px 16px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 0.9rem;
+            color: #374151;
+        }
+        
+        .location-btn:hover {
+            background: #e5e7eb;
+            border-color: #9ca3af;
+        }
+        
+        .forecast-btn {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            border-radius: 12px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: block;
+            margin: 30px auto;
+            min-width: 200px;
+        }
+        
+        .forecast-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(16, 185, 129, 0.3);
+        }
+        
+        .forecast-btn:disabled {
+            background: #9ca3af;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .results { margin-top: 30px; }
+        
+        .risk-assessment {
+            background: #f9fafb;
+            border-radius: 16px;
+            padding: 25px;
+            margin-bottom: 20px;
+        }
+        
+        .risk-level {
+            text-align: center;
+            padding: 20px;
+            border-radius: 12px;
+            font-size: 1.3rem;
+            font-weight: 700;
+            margin-bottom: 20px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .risk-low { background: #dcfce7; color: #166534; border: 2px solid #bbf7d0; }
+        .risk-moderate { background: #fef3c7; color: #92400e; border: 2px solid #fde68a; }
+        .risk-high { background: #fee2e2; color: #991b1b; border: 2px solid #fca5a5; }
+        .risk-critical { background: #7c2d12; color: white; border: 2px solid #dc2626; }
+        .risk-error { background: #fecaca; color: #991b1b; border: 2px solid #f87171; }
+        
+        .forecast-details {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin: 15px 0;
+            border-left: 4px solid #3b82f6;
+        }
+        
+        .factors-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        
+        .factor-card {
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            border-left: 4px solid #6366f1;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            font-size: 1.2rem;
+            color: #6b7280;
+        }
+        
+        .error {
+            background: #fee2e2;
+            color: #991b1b;
+            padding: 20px;
+            border-radius: 12px;
+            border: 1px solid #fca5a5;
+        }
+        
+        @media (max-width: 768px) {
+            .input-grid { grid-template-columns: 1fr; }
+            .location-buttons { flex-direction: column; align-items: center; }
+            .factors-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🌊 Texas AI Flood Forecasting</h1>
+            <p>Real-time flood risk assessment powered by Claude 3 Haiku</p>
+        </div>
+        
+        <div class="content">
+            <div class="input-grid">
+                <div class="input-group">
+                    <label for="latitude">Latitude</label>
+                    <input type="number" id="latitude" step="0.0001" placeholder="30.2672" value="30.2672">
+                </div>
+                <div class="input-group">
+                    <label for="longitude">Longitude</label>
+                    <input type="number" id="longitude" step="0.0001" placeholder="-97.7431" value="-97.7431">
+                </div>
+                <div class="input-group">
+                    <label for="forecastPeriod">Forecast Period</label>
+                    <select id="forecastPeriod">
+                        <option value="12">12 Hour Forecast</option>
+                        <option value="24" selected>24 Hour Forecast</option>
+                        <option value="48">48 Hour Forecast</option>
+                        <option value="72">72 Hour Forecast</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="preset-locations">
+                <h3>Quick Locations</h3>
+                <div class="location-buttons">
+                    <button class="location-btn" onclick="setLocation(30.3074, -97.7415, 'West Austin')">West Austin</button>
+                    <button class="location-btn" onclick="setLocation(30.3928, -97.7639, 'Hudson Bend')">Hudson Bend Road</button>
+                    <button class="location-btn" onclick="setLocation(30.0, -98.0, 'Kickapoo Kamp')">Kickapoo Kamp</button>
+                    <button class="location-btn" onclick="setLocation(29.9897, -100.2087, 'Rocksprings')">Rocksprings</button>
+                    <button class="location-btn" onclick="setLocation(29.882378, -100.088261, 'Panther Canyon')">Panther Canyon</button>
+                </div>
+            </div>
+            
+            <button class="forecast-btn" id="forecastBtn" onclick="runForecast()">
+                🎯 Generate AI Flood Forecast
+            </button>
+            
+            <div id="results" class="results"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'https://2bv3vlwhx9.execute-api.us-east-1.amazonaws.com/prod/forecast';
+        
+        function setLocation(lat, lon, name) {
+            document.getElementById('latitude').value = lat;
+            document.getElementById('longitude').value = lon;
+        }
+        
+        async function runForecast() {
+            const lat = document.getElementById('latitude').value;
+            const lon = document.getElementById('longitude').value;
+            const forecastHours = document.getElementById('forecastPeriod').value;
+            const btn = document.getElementById('forecastBtn');
+            const results = document.getElementById('results');
+            
+            if (!lat || !lon) {
+                alert('Please enter latitude and longitude');
+                return;
+            }
+            
+            btn.disabled = true;
+            btn.textContent = 'Analyzing...';
+            results.innerHTML = '<div class="loading">🔄 Fetching real-time data and generating AI forecast...</div>';
+            
+            try {
+                const location = `${lat}, ${lon}`;
+                const response = await fetch(`${API_URL}?lat=${lat}&lon=${lon}&location=${encodeURIComponent(location)}&forecastHours=${forecastHours}`);
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || 'API request failed');
+                }
+                
+                displayResults(data, forecastHours);
+            } catch (error) {
+                results.innerHTML = `<div class="error">❌ Error: ${error.message}</div>`;
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🎯 Generate AI Flood Forecast';
+            }
+        }
+        
+        function displayResults(data, forecastHours) {
+            const results = document.getElementById('results');
+            
+            if (data.risk_level === 'ERROR') {
+                results.innerHTML = `
+                    <div class="risk-assessment">
+                        <div class="risk-level risk-error">
+                            <strong>FORECAST ERROR</strong><br>
+                            Unable to Generate Assessment
+                        </div>
+                        <p><strong>Error:</strong> ${data.error || 'Unknown error occurred'}</p>
+                        <p style="margin-top: 10px; color: #6b7280;">Please verify your coordinates and try again.</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            const riskClass = `risk-${data.risk_level.toLowerCase()}`;
+            
+            results.innerHTML = `
+                <div class="risk-assessment">
+                    <div class="risk-level ${riskClass}">
+                        <strong>${data.risk_level} FLOOD RISK</strong><br>
+                        <div style="font-size: 1rem; margin-top: 10px;">
+                            Risk Score: ${data.risk_score}/100 | Confidence: ${data.confidence}%
+                        </div>
+                        <div style="font-size: 0.9rem; margin-top: 5px; opacity: 0.8;">
+                            ${forecastHours}-Hour Forecast Period
+                        </div>
+                    </div>
+                    
+                    <div class="forecast-details">
+                        <h4 style="color: #374151; margin-bottom: 10px; display: flex; align-items: center;">
+                            🤖 AI Analysis:
+                        </h4>
+                        <p style="color: #374151; line-height: 1.6;">${data.reasoning}</p>
+                    </div>
+                    
+                    ${data.temporal_forecast ? `
+                        <div class="forecast-details">
+                            <h4 style="color: #374151; margin-bottom: 10px;">⏰ ${forecastHours}-Hour Timeline:</h4>
+                            <p style="color: #374151; line-height: 1.6;">${data.temporal_forecast}</p>
+                        </div>
+                    ` : ''}
+                    
+                    ${data.key_factors && data.key_factors.length > 0 ? `
+                        <div class="factors-grid">
+                            ${data.key_factors.map(factor => `
+                                <div class="factor-card">
+                                    <div style="font-weight: 600; color: #374151; margin-bottom: 5px;">🔍 Key Factor</div>
+                                    <div style="color: #6b7280;">${factor}</div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    ` : ''}
+                    
+                    ${data.recommendations && data.recommendations.length > 0 ? `
+                        <div class="forecast-details">
+                            <h4 style="color: #374151; margin-bottom: 10px;">📋 Recommendations:</h4>
+                            <ul style="color: #374151; line-height: 1.6; padding-left: 20px;">
+                                ${data.recommendations.map(rec => `<li style="margin-bottom: 5px;">${rec}</li>`).join('')}
+                            </ul>
+                        </div>
+                    ` : ''}
+                    
+                    <div style="margin-top: 20px; padding: 15px; background: #f8fafc; border-radius: 8px; font-size: 0.9rem; color: #6b7280;">
+                        <strong>Analysis Details:</strong> Generated at ${new Date(data.generated_at).toLocaleString()} • 
+                        Model: ${data.model} • Sources: ${data.sources_analyzed} • 
+                        Location: ${data.location}
+                    </div>
+                </div>
+            `;
+        }
+    </script>
+</body>
+</html>

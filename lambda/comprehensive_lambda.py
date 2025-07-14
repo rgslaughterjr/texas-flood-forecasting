@@ -32,7 +32,6 @@ def lambda_handler(event, context):
 def get_texas_mesonet_data(lat, lon):
     """Get Texas Mesonet weather data using CurrentData directly"""
     try:
-        # Get current data (includes station info)
         current_data_url = "https://www.texmesonet.org/api/CurrentData"
         current_data_response = fetch_api_data(current_data_url, 'TexMesonet Current Data')
         
@@ -50,14 +49,18 @@ def get_texas_mesonet_data(lat, lon):
                 distance = math.sqrt((lat - station_lat)**2 + (lon - station_lon)**2) * 69
                 
                 if distance <= 50:
+                    # Convert precipitation from mm to inches
+                    precip_mm = float(data_point.get('precip24Hr', 0)) if data_point.get('precip24Hr') else 0.0
+                    precip_inches = round(precip_mm / 25.4, 2)
+                    
                     station_data.append({
                         'station_id': data_point.get('stationId'),
                         'station_name': data_point.get('name'),
                         'distance': round(distance, 1),
-                        'temperature': data_point.get('airTemp'),
-                        'humidity': data_point.get('humidity'),
-                        'precipitation': data_point.get('precip24Hr'),
-                        'soil_moisture': data_point.get('soilMoisture')
+                        'temperature': float(data_point.get('airTemp')) if data_point.get('airTemp') else None,
+                        'humidity': float(data_point.get('humidity')) if data_point.get('humidity') else None,
+                        'precipitation': precip_inches,
+                        'soil_moisture': float(data_point.get('soilMoisture')) if data_point.get('soilMoisture') else None
                     })
         
         station_data.sort(key=lambda x: x['distance'])
@@ -67,10 +70,10 @@ def get_texas_mesonet_data(lat, lon):
             return {'status': 'No nearby stations'}
         
         # Calculate regional averages
-        temps = [float(s['temperature']) for s in station_data if s['temperature'] is not None]
-        humidity = [float(s['humidity']) for s in station_data if s['humidity'] is not None]
-        precip = [float(s['precipitation']) for s in station_data if s['precipitation'] is not None]
-        soil_moisture = [float(s['soil_moisture']) for s in station_data if s['soil_moisture'] is not None]
+        temps = [s['temperature'] for s in station_data if s['temperature'] is not None]
+        humidity = [s['humidity'] for s in station_data if s['humidity'] is not None]
+        precip = [s['precipitation'] for s in station_data if s['precipitation'] is not None]
+        soil_moisture = [s['soil_moisture'] for s in station_data if s['soil_moisture'] is not None]
         
         return {
             'status': 'Active',
@@ -79,7 +82,7 @@ def get_texas_mesonet_data(lat, lon):
                 'temperature': round(sum(temps) / len(temps), 1) if temps else None,
                 'humidity': round(sum(humidity) / len(humidity), 1) if humidity else None,
                 'precipitation_24h': round(sum(precip), 2) if precip else 0.0,
-                'soil_saturation': round(sum(soil_moisture) / len(soil_moisture), 1) if soil_moisture else None
+                'soil_saturation': round(sum(soil_moisture) / len(soil_moisture) * 100, 1) if soil_moisture else None
             },
             'stations': station_data
         }
@@ -158,15 +161,12 @@ def generate_ai_forecast(flood_data, location, lat, lon, forecast_hours):
         mesonet_summary = ""
         if mesonet_data.get('status') == 'Active':
             avg = mesonet_data.get('regional_averages', {})
-            indicators = mesonet_data.get('flood_indicators', {})
             mesonet_summary = f"""
 TexMesonet Data ({mesonet_data.get('stations_count', 0)} stations):
 - Regional temperature: {avg.get('temperature')}°F
 - Regional humidity: {avg.get('humidity')}%
 - 24h precipitation: {avg.get('precipitation_24h')} inches
-- Soil saturation: {avg.get('soil_saturation')}%
-- High precip stations: {indicators.get('high_precip_stations', 0)}
-- Saturated soil stations: {indicators.get('saturated_soil_stations', 0)}"""
+- Soil saturation: {avg.get('soil_saturation')}%"""
 
         prompt = f"""Generate {forecast_hours}-hour flood forecast for {location} at {lat}, {lon}.
 

@@ -62,24 +62,27 @@ def get_texas_mesonet_data(lat, lon):
         
         # Get current data
         current_data_url = "https://www.texmesonet.org/api/CurrentData"
-        current_data = fetch_api_data(current_data_url, 'TexMesonet Current Data')
+        current_data_response = fetch_api_data(current_data_url, 'TexMesonet Current Data')
         
-        if not current_data:
+        if not current_data_response:
             return {'status': 'Unavailable', 'error': 'Could not fetch current data'}
+        
+        # Extract data array from response
+        current_data = current_data_response.get('data', [])
         
         # Match current data with nearby stations
         station_data = []
         for station in nearby_stations:
-            for data_point in current_data.get("data", []):
+            for data_point in current_data:
                 if (data_point.get('stationId') == station['id'] or 
                     data_point.get('id') == station['id']):
                     station_data.append({
                         'station_id': station['id'],
                         'station_name': station['name'],
                         'distance': station['distance'],
-                        'temperature': data_point.get('temperature', data_point.get('airTemp')),
-                        'humidity': data_point.get('humidity', data_point.get('relHumidity')),
-                        'precipitation': data_point.get('precipitation', data_point.get('rainfall')),
+                        'temperature': data_point.get('airTemp', data_point.get('temperature')),
+                        'humidity': data_point.get('humidity'),
+                        'precipitation': data_point.get('precip24Hr', data_point.get('precipitation')),
                         'soil_moisture': data_point.get('soilMoisture')
                     })
                     break

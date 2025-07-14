@@ -70,7 +70,7 @@ def get_texas_mesonet_data(lat, lon):
         # Match current data with nearby stations
         station_data = []
         for station in nearby_stations:
-            for data_point in current_data.get("data", [])
+            for data_point in current_data.get("data", []):
                 if (data_point.get('stationId') == station['id'] or 
                     data_point.get('id') == station['id']):
                     station_data.append({
